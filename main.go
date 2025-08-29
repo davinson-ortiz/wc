@@ -6,36 +6,76 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 func main() {
-	// Defining a boolean flag -l to count lines instead of words
+	// Flags
 	lines := flag.Bool("l", false, "Count lines")
-	bytes := flag.Bool("b", false, "Count Bytes")
-	// Parsing the flags provided by the user
+	bytes := flag.Bool("b", false, "Count bytes")
+	filePath := flag.String("file", "", "File to read (if empty, use stdin or args)")
 	flag.Parse()
-	// Calling the count funtion to count the number of words
-	// received from the Standar Input and printing it out
-	fmt.Println(count(os.Stdin, *lines, *bytes))
+
+	// Obtener reader según prioridad
+	reader, err := getReader(*filePath, flag.Args())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	// Contar
+	n, err := count(reader, *lines, *bytes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error reading input:", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(n)
 }
 
-func count(r io.Reader, countLines bool, countBytes bool) int {
-	// A scanner is used to read text from a Reader(such as files)
+func getReader(filePath string, args []string) (io.Reader, error) {
+	switch {
+	case filePath != "":
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, err
+		}
+		return file, nil
+
+	case len(args) > 0:
+		input := strings.Join(args, " ")
+		return strings.NewReader(input), nil
+
+	default:
+		info, err := os.Stdin.Stat()
+		if err != nil {
+			return nil, err
+		}
+		if (info.Mode() & os.ModeCharDevice) != 0 {
+			return nil, fmt.Errorf("no input provided")
+		}
+		return os.Stdin, nil
+	}
+}
+
+func count(r io.Reader, countLines, countBytes bool) (int, error) {
 	scanner := bufio.NewScanner(r)
-	// If countBytes is set then we split the scanner by bytes,
-	// el if the count lines is not set, we want to count words so we define
-	// the scanner split types to words (default is split by lines)
+
 	if countBytes {
 		scanner.Split(bufio.ScanBytes)
 	} else if !countLines {
 		scanner.Split(bufio.ScanWords)
 	}
-	// Defining a counter
-	wc := 0
-	// For every word scanned, increment the counter
+
+	n := 0
 	for scanner.Scan() {
-		wc++
+		n++
 	}
-	// Return the total
-	return wc
+
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return n, nil
 }
